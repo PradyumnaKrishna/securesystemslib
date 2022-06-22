@@ -6,8 +6,9 @@ signing implementations and a couple of example implementations.
 """
 
 import abc
-import securesystemslib.keys as sslib_keys
 from typing import Any, Dict, Optional, Mapping
+
+import securesystemslib.keys as sslib_keys
 
 
 class Signature:
@@ -26,16 +27,16 @@ class Signature:
             by securesystemslib.
 
     """
+
     def __init__(
         self,
-        keyid: str,
         sig: str,
-        unrecognized_fields: Optional[Mapping[str, Any]] = None
+        keyid: Optional[str] = None,
+        unrecognized_fields: Optional[Mapping[str, Any]] = None,
     ):
-        self.keyid = keyid
         self.signature = sig
+        self.keyid = keyid if keyid else None
         self.unrecognized_fields: Mapping[str, Any] = unrecognized_fields or {}
-
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Signature):
@@ -46,7 +47,6 @@ class Signature:
             and self.signature == other.signature
             and self.unrecognized_fields == other.unrecognized_fields
         )
-
 
     @classmethod
     def from_dict(cls, signature_dict: Dict) -> "Signature":
@@ -69,23 +69,19 @@ class Signature:
             A "Signature" instance.
         """
 
-        keyid = signature_dict.pop("keyid")
         sig = signature_dict.pop("sig")
+        keyid = signature_dict.pop("keyid", None)
         # All fields left in the signature_dict are unrecognized.
-        return cls(
-            keyid, sig, signature_dict
-        )
-
+        return cls(sig, keyid, signature_dict)
 
     def to_dict(self) -> Dict:
         """Returns the JSON-serializable dictionary representation of self."""
 
         return {
-            "keyid": self.keyid,
+            "keyid": self.keyid if self.keyid else "",
             "sig": self.signature,
             **self.unrecognized_fields,
         }
-
 
 
 class Signer:
@@ -103,8 +99,7 @@ class Signer:
         Returns:
             Returns a "Signature" class instance.
         """
-        raise NotImplementedError # pragma: no cover
-
+        raise NotImplementedError  # pragma: no cover
 
 
 class SSlibSigner(Signer):
@@ -138,9 +133,9 @@ class SSlibSigner(Signer):
 
             The public and private keys are strings in PEM format.
     """
+
     def __init__(self, key_dict: Dict):
         self.key_dict = key_dict
-
 
     def sign(self, payload: bytes) -> "Signature":
         """Signs a given payload by the key assigned to the SSlibSigner instance.

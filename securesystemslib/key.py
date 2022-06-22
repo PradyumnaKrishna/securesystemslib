@@ -51,16 +51,16 @@ class SSlibKey(Key):
 
     def __init__(
         self,
-        keyid: str,
         keytype: str,
         scheme: str,
         keyval: Dict[str, str],
+        keyid: Optional[str] = None,
         unrecognized_fields: Optional[Dict[str, Any]] = None,
     ):
-        self.keyid = keyid
         self.keytype = keytype
         self.scheme = scheme
         self.keyval = keyval
+        self.keyid = keyid if keyid else None
         if unrecognized_fields is None:
             unrecognized_fields = {}
 
@@ -79,7 +79,7 @@ class SSlibKey(Key):
         )
 
     @classmethod
-    def from_dict(cls, key_dict: Dict[str, Any], keyid: str) -> "SSlibKey":
+    def from_dict(cls, key_dict: Dict[str, Any], keyid: Optional[str] = None) -> "SSlibKey":
         """Creates ``Key`` object from its json/dict representation.
 
         Raises:
@@ -95,7 +95,7 @@ class SSlibKey(Key):
         keyval = key_dict.pop("keyval")
 
         # All fields left in the key_dict are unrecognized.
-        return cls(keyid, keytype, scheme, keyval, key_dict)
+        return cls(keytype, scheme, keyval, keyid, key_dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Returns the dictionary representation of self."""
@@ -126,17 +126,17 @@ class SSlibKey(Key):
         )
 
         return cls(
-            key_dict["keyid"],
             key_meta["keytype"],
             key_meta["scheme"],
             key_meta["keyval"],
+            key_dict["keyid"],
         )
 
     def to_securesystemslib_key(self) -> Dict[str, Any]:
         """Returns a ``Securesystemslib`` compatible representation of self."""
 
         return {
-            "keyid": self.keyid,
+            "keyid": self.keyid if self.keyid else "",
             "keytype": self.keytype,
             "scheme": self.scheme,
             "keyval": self.keyval,
