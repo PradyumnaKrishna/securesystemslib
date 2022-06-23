@@ -1,11 +1,15 @@
 """Dead Simple Signing Envelope
 """
 
+import logging
 from typing import Any, List
 
 from securesystemslib import exceptions, formats
-from securesystemslib.signer import Signature
+from securesystemslib.key import Key, KeyList
+from securesystemslib.signer import Signature, Signer
 from securesystemslib.util import b64dec, b64enc
+
+logger = logging.getLogger(__name__)
 
 
 class Envelope:
@@ -97,3 +101,85 @@ class Envelope:
             len(self.payload),
             self.payload,
         )
+
+    def sign(self, signer: Signer) -> Signature:
+        """Sign the payload and create the signature.
+
+        Arguments:
+            signer: A "Signer" class instance.
+
+        Raises:
+            TypeError: If "signer" is not an instance of the "Signer" class.
+
+        Returns:
+            A "Signature" instance.
+        """
+
+        if not isinstance(signer, Signer):
+            raise TypeError(f"expected type 'Signer', got {type(signer).__name__}")
+
+        signature = signer.sign(self.pae)
+        self.signatures.append(signature)
+
+        return signature
+
+    def verify(self, keys: KeyList, threshold: int) -> List[str]:
+        """Verify the payload with the provided Keys.
+
+        Arguments:
+            keys: A list of a "str" and "Key" class instance.
+            threshold: Number of signatures needed to pass the verification.
+
+        Raises:
+            TypeError: If a key in "keys" is not an instance of the "Key" class.
+            ValueError: If "threshold" is not valid.
+            SignatureVerificationError: If the amount of "recognized_signers" is less
+                than provided threshold.
+
+        Returns:
+            recognized_signers: list of key names for which verification succeeds.
+        """
+
+        recognized_signers = []
+        used_keyids = []
+        pae = self.pae
+
+        # checks for threshold value.
+        if len(keys) < threshold or threshold <= 0:
+            raise ValueError(f"Threshold must be between 0 and {len(keys)}")
+
+        for signature in self.signatures:
+            for (name, key) in keys:
+                if not isinstance(key, Key):
+                    raise TypeError(f"expected type 'Key', got {type(key).__name__}")
+
+                # If key and signature include keyIDs but do not match skip.
+                if (
+                    signature.keyid is not None
+                    and key.keyid is not None
+                    and signature.keyid != key.keyid
+                ):
+                    continue
+
+                # If a key verifies the signature, we exit and use the result.
+                if key.verify(signature, pae):
+                    if key.keyid:
+                        # If keyid has already been verified, skip.
+                        if key.keyid in used_keyids:
+                            logger.info(
+                                "One subkey of the same main key has already verified"
+                                " the signature, current signature will be skipped."
+                            )
+                            continue
+                        used_keyids.append(key.keyid)
+
+                    recognized_signers.append(name)
+                    break
+
+        if len(recognized_signers) < threshold:
+            raise exceptions.SignatureVerificationError(
+                "Accepted signatures do not match threshold,"
+                f" Found: {len(recognized_signers)}, Expected {threshold}"
+            )
+
+        return recognized_signers
