@@ -1,28 +1,26 @@
 """Dead Simple Signing Envelope
 """
 
-from typing import Any, List
+import logging
+from typing import Any, List, Tuple
 
 from securesystemslib import exceptions, formats
-from securesystemslib.signer import Signature
+from securesystemslib.key import SSlibKey
+from securesystemslib.signer import Signature, Signer
 from securesystemslib.util import b64dec, b64enc
+
+logger = logging.getLogger(__name__)
+
+KeyList = List[Tuple[str, SSlibKey]]
 
 
 class Envelope:
-    """
-    DSSE Envelope to provide interface for signing arbitrary data.
+    """DSSE Envelope to provide interface for signing arbitrary data.
 
     Attributes:
-        payload: Arbitrary byte sequence of serialized body
-        payload_type: string that identifies how to interpret payload
-        signatures: List of Signature and GPG Signature
-
-    Methods:
-        from_dict(cls, data):
-            Creates a Signature object from its JSON/dict representation.
-
-        to_dict(self):
-            Returns the JSON-serializable dictionary representation of self.
+        payload: Arbitrary byte sequence of serialized body.
+        payload_type: string that identifies how to interpret payload.
+        signatures: list of Signature and GPGSignature.
 
     """
 
@@ -87,7 +85,6 @@ class Envelope:
             "signatures": [signature.to_dict() for signature in self.signatures],
         }
 
-    @property
     def pae(self) -> bytes:
         """Pre-Auth-Encoding byte sequence of self."""
 
@@ -97,3 +94,72 @@ class Envelope:
             len(self.payload),
             self.payload,
         )
+
+    def sign(self, signer: Signer) -> Signature:
+        """Sign the payload and create the signature.
+
+        Arguments:
+            signer: A "Signer" class instance.
+
+        Returns:
+            A "Signature" instance.
+        """
+
+        signature = signer.sign(self.pae())
+        self.signatures.append(signature)
+
+        return signature
+
+    def verify(self, keys: KeyList, threshold: int) -> List[str]:
+        """Verify the payload with the provided Keys.
+
+        Arguments:
+            keys: A list key tuples, a key tuple is a pair of string identifier
+                and an object of "Key" class instance.
+            threshold: Number of signatures needed to pass the verification.
+
+        Raises:
+            ValueError: If "threshold" is not valid.
+            SignatureVerificationError: If the amount of "recognized_signers" is less
+                than provided threshold.
+
+        Returns:
+            recognized_signers: list of key names for which verification succeeds.
+        """
+
+        recognized_signers = []
+        pae = self.pae()
+
+        # checks for threshold value.
+        if threshold <= 0:
+            raise ValueError("Threshold must be greater than 0")
+
+        if threshold > len(keys):
+            raise ValueError("Amount of keys must be greater than threshold")
+
+        for signature in self.signatures:
+            for (name, key) in keys:
+                # If key and signature include keyIDs but do not match skip.
+                if (
+                    signature.keyid is not None
+                    and key.keyid is not None
+                    and signature.keyid != key.keyid
+                ):
+                    continue
+
+                # If a key verifies the signature, we exit and use the result.
+                if key.verify(signature, pae):
+                    recognized_signers.append(name)
+                    break
+
+            # Break, if amount of recognized_signer are more than threshold.
+            if len(recognized_signers) >= threshold:
+                break
+
+        if threshold > len(recognized_signers):
+            raise exceptions.SignatureVerificationError(
+                "Accepted signatures do not match threshold,"
+                f" Found: {len(recognized_signers)}, Expected {threshold}"
+            )
+
+        return recognized_signers
