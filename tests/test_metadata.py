@@ -5,9 +5,15 @@
 import copy
 import unittest
 
-from securesystemslib import exceptions
+import securesystemslib.keys as KEYS
+from securesystemslib.exceptions import (
+    FormatError,
+    SignatureVerificationError,
+    UnsupportedAlgorithmError,
+)
+from securesystemslib.key import SSlibKey
 from securesystemslib.metadata import Envelope
-from securesystemslib.signer import Signature
+from securesystemslib.signer import Signature, SSlibSigner
 
 
 class TestEnvelope(unittest.TestCase):
@@ -15,6 +21,12 @@ class TestEnvelope(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls.key_dicts = [
+            ("rsa", KEYS.generate_rsa_key()),
+            ("ecdsa", KEYS.generate_ed25519_key()),
+            ("ed25519", KEYS.generate_ecdsa_key()),
+        ]
+
         cls.signature_dict = {
             "keyid": "11fa391a0ed7a447cbfeb4b2667e286fc248f64d5e6d0eeed2e5e23f97f9f714",
             "sig": "30460221009342e4566528fcecf6a7a5d53ebacdb1df151e242f55f8775883469cb01dbc6602210086b426cc826709acfa2c3f9214610cb0a832db94bbd266fd7c5939a48064a851",
@@ -39,7 +51,7 @@ class TestEnvelope(unittest.TestCase):
 
         # Assert TypeError on invalid signature
         envelope_dict["signatures"] = [""]
-        self.assertRaises(exceptions.FormatError, Envelope.from_dict, envelope_dict)
+        self.assertRaises(FormatError, Envelope.from_dict, envelope_dict)
 
     def test_envelope_eq_(self):
         """Test envelope equality"""
@@ -75,6 +87,85 @@ class TestEnvelope(unittest.TestCase):
 
         # Checking for Pre-Auth-Encoding generated is correct.
         self.assertEqual(self.pae, envelope_obj.pae)
+
+    def test_sign(self):
+        """Test payload signing of envelope."""
+
+        # Create an Envelope with no signatures.
+        envelope_dict = copy.deepcopy(self.envelope_dict)
+        envelope_dict["signatures"] = []
+        envelope_obj = Envelope.from_dict(envelope_dict)
+
+        for (_, key_dict) in self.key_dicts:
+            # Test with key_dict that is not a signer.
+            with self.assertRaises(TypeError):
+                envelope_obj.sign(key_dict)
+
+            # Test for invalid scheme.
+            valid_scheme = key_dict["scheme"]
+            key_dict["scheme"] = "invalid_scheme"
+            signer = SSlibSigner(key_dict)
+            with self.assertRaises((FormatError, UnsupportedAlgorithmError)):
+                envelope_obj.sign(signer)
+
+            # Sign the payload.
+            key_dict["scheme"] = valid_scheme
+            signer = SSlibSigner(key_dict)
+            envelope_obj.sign(signer)
+
+        # Tests for signatures created.
+        self.assertEqual(len(self.key_dicts), len(envelope_obj.signatures))
+        for signature in envelope_obj.signatures:
+            self.assertIsInstance(signature, Signature)
+
+    def test_verify(self):
+        "Test payload verification of envelope."
+
+        # Create an Evnvelope with no signatures.
+        envelope_dict = copy.deepcopy(self.envelope_dict)
+        envelope_dict["signatures"] = []
+        envelope_obj = Envelope.from_dict(envelope_dict)
+
+        # Sign payload of Envelope.
+        for (_, key_dict) in self.key_dicts:
+            signer = SSlibSigner(key_dict)
+            envelope_obj.sign(signer)
+
+        # Check for signatures of Envelope.
+        self.assertEqual(len(self.key_dicts), len(envelope_obj.signatures))
+
+        keys_list = []
+        for (name, key_dict) in self.key_dicts:
+            keys_list.append(
+                (name, SSlibKey.from_securesystemslib_key(key_dict))
+            )
+
+        # Test for invalid threshold value for keys_list.
+        with self.assertRaises(ValueError):
+            envelope_obj.verify(keys_list, 0)
+
+        # Test with invalid KeyList.
+        with self.assertRaises(TypeError):
+            envelope_obj.verify(self.key_dicts, len(keys_list))
+
+        # Test with valid keylist and threshold.
+        verified_keys = envelope_obj.verify(keys_list, len(keys_list))
+        self.assertEqual(len(verified_keys), len(keys_list))
+
+        # Test for unknown keys and threshold of 1.
+        new_keys = [
+            ("unknown_ecdsa", KEYS.generate_ecdsa_key()),
+            ("unknown_ed25519", KEYS.generate_ed25519_key()),
+            ("unknown_rsa", KEYS.generate_rsa_key()),
+        ]
+        new_keys_list = []
+        for (name, key_dict) in new_keys:
+            new_keys_list.append(
+                (name, SSlibKey.from_securesystemslib_key(key_dict))
+            )
+
+        with self.assertRaises(SignatureVerificationError):
+            envelope_obj.verify(new_keys_list, 1)
 
 
 # Run the unit tests.
