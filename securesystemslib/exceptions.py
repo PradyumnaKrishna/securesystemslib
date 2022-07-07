@@ -110,7 +110,7 @@ class InvalidConfigurationError(Error):
   pass
 
 class StorageError(Error):
-  """Indicate an error occured during interaction with an abstracted storage
+  """Indicate an error occurred during interaction with an abstracted storage
      backend."""
   pass
 
