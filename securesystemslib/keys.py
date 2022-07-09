@@ -720,6 +720,68 @@ def create_signature(key_dict, data):
 
 
 
+def verify_sig(keytype, public, scheme, sig, data):
+  """Partial function to verify a signature sig for an arbitrary data.
+  
+  This function uses keytype, public and scheme to choose correct signature type
+  and verify accordingly.
+
+  Arguments:
+    keytype: Keytype of the Public Key.
+    public: Public Key of the Signature.
+    scheme: Scheme of the Public Key.
+    sig: signature to be verified.
+    data: Data that the signature is expected to be over.
+
+  Raises:
+    securesystemslib.exceptions.UnsupportedAlgorithmError: if 'key_dict' or
+      'signature' specifies an unsupported algorithm.
+
+  Returns:
+    Boolean. True if the signature is valid, False otherwise.
+  """
+  valid_signature = False
+  sig = binascii.unhexlify(sig.encode('utf-8'))
+
+  if keytype == 'rsa':
+    if scheme in RSA_SIGNATURE_SCHEMES:
+      valid_signature = rsa_keys.verify_rsa_signature(sig,
+        scheme, public, data)
+
+    else:
+      raise exceptions.UnsupportedAlgorithmError('Unsupported'
+          ' signature scheme is specified: ' + repr(scheme))
+
+  elif keytype == 'ed25519':
+    if scheme == 'ed25519':
+      try:
+        public = binascii.unhexlify(public.encode('utf-8'))
+      except binascii.Error as e:
+        raise exceptions.FormatError(
+          f'Failed to parse key {public} as hex'
+        ) from e
+      valid_signature = ed25519_keys.verify_signature(public,
+          scheme, sig, data)
+
+    else:
+      raise exceptions.UnsupportedAlgorithmError('Unsupported'
+          ' signature scheme is specified: ' + repr(scheme))
+
+  elif keytype in ['ecdsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384']:
+    if scheme in ['ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384']:
+      valid_signature = ecdsa_keys.verify_signature(public, scheme, sig, data)
+
+    else:
+      raise exceptions.UnsupportedAlgorithmError('Unsupported'
+          ' signature scheme is specified: ' + repr(scheme))
+
+  # 'securesystemslib.formats.ANYKEY_SCHEMA' should have detected invalid key
+  # types.  This is a defensive check against an invalid key type.
+  else: # pragma: no cover
+    raise TypeError('Unsupported key type.')
+
+  return valid_signature
+
 
 
 def verify_signature(key_dict, signature, data):
@@ -819,52 +881,14 @@ def verify_signature(key_dict, signature, data):
   # (i.e., rsakey_dict['keyval']['public']), verify whether 'signature'
   # was produced by key_dict's corresponding private key
   # key_dict['keyval']['private'].
-  sig = signature['sig']
-  sig = binascii.unhexlify(sig.encode('utf-8'))
-  public = key_dict['keyval']['public']
-  keytype = key_dict['keytype']
-  scheme = key_dict['scheme']
-  valid_signature = False
 
-
-  if keytype == 'rsa':
-    if scheme in RSA_SIGNATURE_SCHEMES:
-      valid_signature = rsa_keys.verify_rsa_signature(sig,
-        scheme, public, data)
-
-    else:
-      raise exceptions.UnsupportedAlgorithmError('Unsupported'
-          ' signature scheme is specified: ' + repr(scheme))
-
-  elif keytype == 'ed25519':
-    if scheme == 'ed25519':
-      try:
-        public = binascii.unhexlify(public.encode('utf-8'))
-      except binascii.Error as e:
-        raise exceptions.FormatError(
-          f'Failed to parse key {public} as hex'
-        ) from e
-      valid_signature = ed25519_keys.verify_signature(public,
-          scheme, sig, data)
-
-    else:
-      raise exceptions.UnsupportedAlgorithmError('Unsupported'
-          ' signature scheme is specified: ' + repr(scheme))
-
-  elif keytype in ['ecdsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384']:
-    if scheme in ['ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384']:
-      valid_signature = ecdsa_keys.verify_signature(public, scheme, sig, data)
-
-    else:
-      raise exceptions.UnsupportedAlgorithmError('Unsupported'
-          ' signature scheme is specified: ' + repr(scheme))
-
-  # 'securesystemslib.formats.ANYKEY_SCHEMA' should have detected invalid key
-  # types.  This is a defensive check against an invalid key type.
-  else: # pragma: no cover
-    raise TypeError('Unsupported key type.')
-
-  return valid_signature
+  return verify_sig(
+    key_dict['keytype'],
+    key_dict['keyval']['public'],
+    key_dict['scheme'],
+    signature['sig'],
+    data
+  )
 
 
 

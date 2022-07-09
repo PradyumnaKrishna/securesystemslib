@@ -3,7 +3,7 @@
 import abc
 from typing import Any, Dict, Optional
 
-from securesystemslib import keys
+from securesystemslib import exceptions, keys
 from securesystemslib.signer import Signature
 
 
@@ -153,6 +153,16 @@ class SSlibKey(Key):
             Boolean. True if the signature is valid, False otherwise.
         """
 
-        return keys.verify_signature(
-            self.to_securesystemslib_key(), signature.to_dict(), payload
+        if self.keyid and signature.keyid and self.keyid != signature.keyid:
+            raise exceptions.CryptoError(
+                f"The KEYID ({self.keyid}) in the given key does not match the KEYID"
+                f" ({signature.keyid}) in the signature."
+            )
+
+        return keys.verify_sig(
+            self.keytype,
+            self.keyval["public"],
+            self.scheme,
+            signature.signature,
+            payload,
         )
