@@ -13,7 +13,7 @@ from securesystemslib.exceptions import (
 )
 from securesystemslib.key import SSlibKey
 from securesystemslib.metadata import Envelope
-from securesystemslib.signer import Signature, SSlibSigner
+from securesystemslib.signer import GPGSignature, Signature, SSlibSigner
 
 
 class TestEnvelope(unittest.TestCase):
@@ -28,33 +28,47 @@ class TestEnvelope(unittest.TestCase):
         ]
 
         cls.signature_dict = {
-            "keyid": "11fa391a0ed7a447cbfeb4b2667e286fc248f64d5e6d0eeed2e5e23f97f9f714",
-            "sig": "30460221009342e4566528fcecf6a7a5d53ebacdb1df151e242f55f8775883469cb01dbc6602210086b426cc826709acfa2c3f9214610cb0a832db94bbd266fd7c5939a48064a851",
+            "keyid": "11fa391a0ed7a447",
+            "sig": "30460221009342e4566528fcecf6a7a5",
+        }
+        cls.gpg_signature_dict = {
+            "keyid": "f4f90403af58eef6",
+            "signature": "c39f86e70e12e70e11d87eb7e3ab7d3b",
+            "other_headers": "d8f8a89b5d71f07b842a",
         }
         cls.envelope_dict = {
             "payload": "aGVsbG8gd29ybGQ=",
             "payloadType": "http://example.com/HelloWorld",
-            "signatures": [cls.signature_dict],
+            "signatures": [cls.signature_dict, cls.gpg_signature_dict],
         }
         cls.pae = b"DSSEv1 29 http://example.com/HelloWorld 11 hello world"
 
     def test_envelope_from_to_dict(self):
-        """Test envelope to_dict and from_dict methods"""
+        """Test envelope to_dict and from_dict methods."""
 
         envelope_dict = copy.deepcopy(self.envelope_dict)
 
         # create envelope object from its dict.
         envelope_obj = Envelope.from_dict(envelope_dict)
+        for signature in envelope_obj.signatures:
+            self.assertIsInstance(signature, Signature)
 
         # Assert envelope dict created by to_dict will be equal.
         self.assertDictEqual(self.envelope_dict, envelope_obj.to_dict())
 
-        # Assert TypeError on invalid signature
+        # Assert TypeError on invalid signature.
         envelope_dict["signatures"] = [""]
-        self.assertRaises(FormatError, Envelope.from_dict, envelope_dict)
+        with self.assertRaises(FormatError):
+            Envelope.from_dict(envelope_dict)
+
+        # Assert GPGSignature formation.
+        envelope_dict["signatures"] = [self.gpg_signature_dict]
+        envelope_obj = Envelope.from_dict(envelope_dict)
+        for signature in envelope_obj.signatures:
+            self.assertIsInstance(signature, GPGSignature)
 
     def test_envelope_eq_(self):
-        """Test envelope equality"""
+        """Test envelope equality."""
 
         envelope_obj = Envelope.from_dict(copy.deepcopy(self.envelope_dict))
 
