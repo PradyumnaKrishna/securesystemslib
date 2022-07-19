@@ -1,6 +1,7 @@
 """Key interface and example interface implementations."""
 
 import abc
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +14,7 @@ class Key:
     """Key interface created to support multiple verify implementations."""
 
     __metaclass__ = abc.ABCMeta
+    keyid: str
 
     @abc.abstractmethod
     def verify(self, signature: Signature, payload: bytes) -> bool:
@@ -57,6 +59,10 @@ class SSlibKey(Key):
     keyval: Dict[str, str]
     keyid: str
     unrecognized_fields: Dict[str, Any] = field(default_factory=dict)
+
+    def __hash__(self):
+        public_key = self.keyval["public"]
+        return hash((self.keytype, self.scheme, public_key))
 
     @classmethod
     def from_dict(cls, key_dict: Dict[str, Any], keyid: str) -> "SSlibKey":
@@ -162,11 +168,15 @@ class GPGKey(Key):
     type: str
     method: str
     hashes: List[str]
-    keyval: Dict[str, str]
+    keyval: Dict[str, Dict]
     keyid: str
     creation_time: Optional[int] = None
     validity_period: Optional[int] = None
     subkeys: Optional[Dict[str, "GPGKey"]] = None
+
+    def __hash__(self):
+        public_key = json.dumps(self.keyval["public"], sort_keys=True)
+        return hash((self.type, self.method, self.hashes[0], public_key))
 
     @classmethod
     def from_dict(cls, key_dict: Dict[str, Any]):
