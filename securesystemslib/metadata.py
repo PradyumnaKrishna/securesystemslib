@@ -2,16 +2,14 @@
 """
 
 import logging
-from typing import Any, List, Tuple
+from typing import Any, List, Set
 
 from securesystemslib import exceptions, formats
-from securesystemslib.key import SSlibKey
+from securesystemslib.key import Key
 from securesystemslib.signer import GPGSignature, Signature, Signer
 from securesystemslib.util import b64dec, b64enc
 
 logger = logging.getLogger(__name__)
-
-KeyList = List[Tuple[str, SSlibKey]]
 
 
 class Envelope:
@@ -107,12 +105,12 @@ class Envelope:
 
         return signature
 
-    def verify(self, keys: KeyList, threshold: int) -> List[str]:
+    def verify(self, keys: List[Key], threshold: int) -> Set[Key]:
         """Verify the payload with the provided Keys.
 
         Arguments:
-            keys: A list key tuples, a key tuple is a pair of string identifier
-                and an object of "Key" class instance.
+            keys: A list of "Key" class instance that is a public key to verify
+                the signatures.
             threshold: Number of signatures needed to pass the verification.
 
         Raises:
@@ -121,10 +119,10 @@ class Envelope:
                 than provided threshold.
 
         Returns:
-            recognized_signers: list of key names for which verification succeeds.
+            recognized_signers: A set of recognized public keys.
         """
 
-        recognized_signers = []
+        recognized_signers = set()
         pae = self.pae()
 
         # checks for threshold value.
@@ -135,7 +133,7 @@ class Envelope:
             raise ValueError("Amount of keys must be greater than threshold")
 
         for signature in self.signatures:
-            for (name, key) in keys:
+            for key in keys:
                 # If key and signature include keyIDs but do not match skip.
                 if (
                     signature.keyid is not None
@@ -146,7 +144,7 @@ class Envelope:
 
                 # If a key verifies the signature, we exit and use the result.
                 if key.verify(signature, pae):
-                    recognized_signers.append(name)
+                    recognized_signers.add(key)
                     break
 
             # Break, if amount of recognized_signer are more than threshold.
